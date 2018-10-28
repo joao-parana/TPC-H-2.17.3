@@ -1,4 +1,5 @@
 
+
 import $ivy.`org.apache.spark::spark-mllib:2.3.2`
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.SparkSession.Builder
@@ -10,19 +11,157 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.expressions.{MutableAggregationBuffer,UserDefinedAggregateFunction}
 import org.apache.spark.sql.types._
+
 // import org.apache.spark.sql.types.Metadata;
 Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
 var numCores = 3
 val sparkBuilder: Builder = SparkSession.builder()
 var sparkSession: SparkSession = null
 sparkSession = sparkBuilder.master("local[" + numCores + "]").
-          appName("MyApp").getOrCreate()
+                    appName("MyApp").getOrCreate()
 val spark = sparkSession
 import spark.implicits._ // requisito para algumas funcionalidades
 val sparkContext: SparkContext = spark.sparkContext
 
+// para lidar com Parquet
+import org.apache.spark.sql.Encoders
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.DataFrame
+import java.io.File
+
+def writeParquet(df: Dataset[Row], fileName: String)  {
+  // Salvando os dados no formato Parquet
+  // (new File(fileName)).deleteRecursively()
+  df.write.parquet(fileName)
+}
+
 // diretório: dbgen/DATA 
 val dir = "dbgen/DATA"
+
+// files: customers.csv  lineitems.csv  orders.csv
+
+val META_EMPTY = Metadata.empty
+
+val dataIsCSV = true
+val needProcessLineItems = false
+
+// Implementar o metodo f no MAP abaixo
+// val customerSchemaDefStr = customers.schema.map(e => f(e)).foreach(println)
+// para mudar de: StructField(x_custkey,IntegerType,true) 
+//            para: StructField("x_custkey", IntegerType, true, META_EMPTY),
+
+if (dataIsCSV) {
+  val customerSchema : StructType = StructType(Array(
+    StructField("x_custkey", IntegerType, true, META_EMPTY),
+    StructField("c_name", StringType, true, META_EMPTY),
+    StructField("c_address", StringType, true, META_EMPTY),
+    StructField("c_nationkey", IntegerType, true, META_EMPTY),
+    StructField("c_phone", StringType, true, META_EMPTY),
+    StructField("c_acctbal", DoubleType, true, META_EMPTY),
+    StructField("c_mktsegment", StringType, true, META_EMPTY),
+    StructField("c_comment", StringType, true, META_EMPTY)
+    )
+  )
+
+  // val customers = spark.read.option("delimiter", "|").
+  //       option("inferSchema", "true").
+  //       option("header", "true").
+  //       csv(s"${dir}/customer.csv")
+
+  val customers = spark.read.option("delimiter", "|").
+        option("inferSchema", "false").
+        option("header", "false").
+        schema(customerSchema).
+        csv(s"${dir}/customer.csv")
+
+  // Salvando os clientes no formato Parquet
+  writeParquet(customers, "customers.parquet")
+}
+
+val customers: DataFrame = spark.read.parquet(s"${dir}/customers.parquet")
+// customers é : org.apache.spark.sql.package.DataFrame = [x_custkey: int, c_name: string ... 6 more fields]
+
+if (dataIsCSV) {
+  val orderSchema : StructType = StructType(Array(
+    StructField("o_orderkey", IntegerType, true, META_EMPTY),
+    StructField("x_custkey", IntegerType, true, META_EMPTY),
+    StructField("o_orderstatus", StringType, true, META_EMPTY),
+    StructField("o_totalprice", DoubleType, true, META_EMPTY),
+    StructField("o_orderdate", TimestampType, true, META_EMPTY),
+    StructField("o_orderpriority", StringType, true, META_EMPTY),
+    StructField("o_clerk", StringType, true, META_EMPTY),
+    StructField("o_shippriority", IntegerType, true, META_EMPTY),
+    StructField("o_comment", StringType, true, META_EMPTY)
+    )
+  )
+
+  // val orders = spark.read.option("delimiter", "|").
+  //       option("inferSchema", "true").
+  //       option("header", "true").
+  //       csv(s"${dir}/order.csv")
+
+  val orders = spark.read.option("delimiter", "|").
+        option("inferSchema", "false").
+        option("header", "false").
+        schema(orderSchema).
+        csv(s"${dir}/order.csv")
+
+  // Salvando os pedidos no formato Parquet
+  writeParquet(orders, s"${dir}/orders.parquet")
+}
+// Na forma abaixo obtenho um DataFrame e não um Dataset[Order]
+val orders: DataFrame = spark.read.parquet(s"${dir}/orders.parquet")
+// orders é : org.apache.spark.sql.package.DataFrame = [o_orderkey: int, x_custkey: int ... 7 more fields]
+
+// Para obter um Dataset[Order], ou seja um objeto tipado faço:
+case class Order(o_orderkey: Int, 
+                 x_custkey: Int,
+                 o_orderstatus: String,
+                 o_totalprice: Double,
+                 o_orderdate: Int,
+                 o_orderpriority: String,
+                 o_clerk: String,
+                 o_shippriority: Integer, 
+                 o_comment: String)
+
+val orders: Dataset[Order] = spark.read.parquet(s"${dir}/orders.parquet").as[Order]
+
+if (dataIsCSV && needProcessLineItems) {
+  val lineitemSchema : StructType = StructType(Array(
+    StructField("l_orderkey", IntegerType, true, META_EMPTY),
+    StructField("l_partkey", IntegerType, true, META_EMPTY),
+    StructField("l_suppkey", IntegerType, true, META_EMPTY),
+    StructField("l_linenumber", IntegerType, true, META_EMPTY),
+    StructField("l_quantity", IntegerType, true, META_EMPTY),
+    StructField("l_extendedprice", DoubleType, true, META_EMPTY),
+    StructField("l_discount", DoubleType, true, META_EMPTY),
+    StructField("l_tax", DoubleType, true, META_EMPTY),
+    StructField("l_returnflag", StringType, true, META_EMPTY),
+    StructField("l_linestatus", StringType, true, META_EMPTY),
+    StructField("l_shipdate", TimestampType, true, META_EMPTY),
+    StructField("l_commitdate", TimestampType, true, META_EMPTY),
+    StructField("l_receiptdate", TimestampType, true, META_EMPTY),
+    StructField("l_shipinstruct", StringType, true, META_EMPTY),
+    StructField("l_shipmode", StringType, true, META_EMPTY),
+    StructField("l_comment", StringType, true, META_EMPTY)
+    )
+  )
+
+  val lineitems = spark.read.option("delimiter", "|").
+        option("inferSchema", "false").
+        option("header", "false").
+        schema(lineitemSchema).
+        csv(s"${dir}/lineitem.csv")
+
+  // Salvando os itens de pedido no formato Parquet
+  writeParquet(lineitems, s"${dir}/lineitems.parquet")
+}
+
+var lineitems: Dataset[Row] = null
+if (needProcessLineItems) {
+  lineitems = spark.read.parquet(s"${dir}/lineitems.parquet")
+}
+
 
 // files: customers.csv  lineitems.csv  orders.csv
 
