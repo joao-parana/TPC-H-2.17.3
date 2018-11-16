@@ -1,4 +1,3 @@
-*.parquet
 *.parquet.tar
 .DS_Store
 
